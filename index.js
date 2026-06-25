@@ -369,13 +369,24 @@ app.get('/', (req, res) => {
   res.json({ ok: true, service: 'Decopol Davomat Bot', status: 'running' });
 });
 
+let lastSeenChats = [];
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200); // Telegram'ga darhol javob, keyin qayta ishlaymiz
   try {
+    const chat = req.body?.message?.chat;
+    if (chat) {
+      lastSeenChats.unshift({ id: chat.id, type: chat.type, title: chat.title || chat.first_name || '-', time: new Date().toISOString() });
+      lastSeenChats = lastSeenChats.slice(0, 20);
+    }
     await processUpdate(req.body);
   } catch (e) {
     console.error('processUpdate error:', e);
   }
+});
+
+app.get('/debug-chats', (req, res) => {
+  res.json({ ok: true, lastSeenChats });
 });
 
 const PORT = process.env.PORT || 3000;
