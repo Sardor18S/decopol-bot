@@ -184,7 +184,7 @@ function tashkentDayOfMonth() {
 // KUNLIK HISOBOT — Showroom, Call Centre, Marketing + AI xulosa
 // ───────────────────────────────────────────────
 const MKT_FB = 'https://marketing-dashboard-a028d-default-rtdb.firebaseio.com';
-const HISOBOT_GROUP_ID = process.env.HISOBOT_GROUP_ID || '5487994365';
+const HISOBOT_GROUP_ID = process.env.HISOBOT_GROUP_ID || '-5487994365';
 
 async function fbGetRaw(baseUrl, path) {
   try {
