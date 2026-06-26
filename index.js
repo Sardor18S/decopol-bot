@@ -558,6 +558,21 @@ app.get('/', (req, res) => {
   res.json({ ok: true, service: 'Decopol Davomat Bot', status: 'running' });
 });
 
+// Dashboard'dan vazifa biriktirilganda, yoki boshqa har qanday xabar yuborish uchun
+app.post('/send-message', express.json(), async (req, res) => {
+  const { chat_id, text } = req.body || {};
+  if (!chat_id || !text) {
+    return res.json({ ok: false, error: 'chat_id va text kerak' });
+  }
+  const result = await tgRequest('sendMessage', { chat_id, text, parse_mode: 'HTML' });
+  res.json({ ok: result?.ok === true, data: result });
+});
+
+// Dashboard Sozlamalarida "Chat ID'larni yangilash" tugmasi uchun
+app.get('/get-chats', (req, res) => {
+  res.json({ ok: true, chats: lastSeenChats });
+});
+
 let lastSeenChats = [];
 
 app.post('/webhook', async (req, res) => {
