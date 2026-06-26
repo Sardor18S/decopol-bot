@@ -168,6 +168,195 @@ function tashkentHour() {
   return tashkent.getHours();
 }
 
+function tashkentMinute() {
+  const now = new Date();
+  const tashkent = new Date(now.getTime() + (5 * 60 + now.getTimezoneOffset()) * 60000);
+  return tashkent.getMinutes();
+}
+
+function tashkentDayOfMonth() {
+  const now = new Date();
+  const tashkent = new Date(now.getTime() + (5 * 60 + now.getTimezoneOffset()) * 60000);
+  return tashkent.getDate();
+}
+
+// ───────────────────────────────────────────────
+// KUNLIK HISOBOT — Showroom, Call Centre, Marketing + AI xulosa
+// ───────────────────────────────────────────────
+const MKT_FB = 'https://marketing-dashboard-a028d-default-rtdb.firebaseio.com';
+const HISOBOT_GROUP_ID = process.env.HISOBOT_GROUP_ID || '5487994365';
+
+async function fbGetRaw(baseUrl, path) {
+  try {
+    const res = await fetch(`${baseUrl}${path}.json`);
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function parseMaybeDoubleEncoded(data) {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      return null;
+    }
+  }
+  return data;
+}
+
+async function buildShowroomSummary() {
+  const trkRaw = parseMaybeDoubleEncoded(await fbGet('/kpi/dc_trk')) || {};
+  const today = tashkentDayOfMonth();
+  const r = trkRaw[today] || {};
+  const nv = (v) => Number(v) || 0;
+  const cols = { m: ['m0', 'm1', 'm2'], d: ['d0', 'd1', 'd2'], f: ['f0', 'f1', 'f2'], k: ['k0', 'k1', 'k2'] };
+  const bcols = { m: ['mb0', 'mb1', 'mb2'], d: ['db0', 'db1', 'db2'], f: ['fb0', 'fb1', 'fb2'] };
+  const names = { m: 'Muhammaddiyor', d: 'Diyorbek', f: 'Jahongir' };
+
+  let totalLid = 0;
+  let totalSot = 0;
+  let totalSavdo = 0;
+  const perEmployee = [];
+
+  ['m', 'd', 'f'].forEach((k) => {
+    const lid = nv(r[cols[k][0]]) + nv(r[bcols[k][0]]);
+    const sot = nv(r[cols[k][1]]) + nv(r[bcols[k][1]]);
+    const savdo = nv(r[cols[k][2]]) + nv(r[bcols[k][2]]);
+    totalLid += lid;
+    totalSot += sot;
+    totalSavdo += savdo;
+    perEmployee.push({ name: names[k], lid, sot, savdo });
+  });
+  // Kompaniya (k) - faqat jamoa umumiy hisobiga
+  totalLid += nv(r.k0);
+  totalSot += nv(r.k1);
+  totalSavdo += nv(r.k2);
+
+  const konv = totalLid > 0 ? Math.round((totalSot / totalLid) * 1000) / 10 : 0;
+  return { totalLid, totalSot, totalSavdo, konv, perEmployee };
+}
+
+async function buildCallCentreSummary() {
+  const cckTrkRaw = parseMaybeDoubleEncoded(await fbGet('/kpi/dc_cck_trk')) || {};
+  const today = tashkentDayOfMonth();
+  const r = cckTrkRaw[today] || {};
+  const operators = ['lola', 'asadbek', 'shahina', 'shirina'];
+  const names = { lola: 'Lola', asadbek: 'Asadbek', shahina: 'Shahina', shirina: 'Shirina' };
+
+  let totalVisit = 0;
+  const perOperator = [];
+  operators.forEach((op) => {
+    const visit = Number(r[op]?.visit) || 0;
+    const sot = Number(r[op]?.sot) || 0;
+    totalVisit += visit;
+    perOperator.push({ name: names[op], visit, sot });
+  });
+
+  // Jami lid - amoCRM orqali kelishi kerak, lekin sodda hisobot uchun visit/konv taxminiy qoldiriladi
+  return { totalVisit, perOperator };
+}
+
+async function buildMarketingSummary() {
+  const entriesRaw = await fbGetRaw(MKT_FB, '/marketing_entries');
+  const today = todayStr();
+  let totalLeads = 0;
+  let totalSpend = 0;
+  if (entriesRaw && typeof entriesRaw === 'object') {
+    Object.values(entriesRaw).forEach((e) => {
+      if (e.date === today) {
+        totalLeads += Number(e.leads) || 0;
+        totalSpend += Number(e.spend) || 0;
+      }
+    });
+  }
+  const cpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+  return { totalLeads, totalSpend, cpl };
+}
+
+async function getClaudeSummary(context) {
+  if (!CLAUDE_API_KEY) return "AI Maslahatchi: Claude API kalit sozlanmagan.";
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 250,
+        system:
+          "Siz Decopol kompaniyasi uchun ishlaydigan AI Biznes Maslahatchisiz. Berilgan kunlik ko'rsatkichlarni tahlil qilib, 2-3 gapda QISQA xulosa va bir amaliy tavsiya bering. Faqat o'zbek tilida, professional ohangda javob bering.",
+        messages: [{ role: 'user', content: context }],
+      }),
+    });
+    if (!res.ok) return "AI Maslahatchi: hozircha xulosa berib bo'lmadi.";
+    const data = await res.json();
+    const textBlock = (data.content || []).find((b) => b.type === 'text');
+    return (textBlock?.text || "AI Maslahatchi: javob bo'sh keldi.").trim();
+  } catch (e) {
+    return "AI Maslahatchi: ulanish xatosi.";
+  }
+}
+
+function fmtMoney(n) {
+  return Math.round(n).toLocaleString('en-US');
+}
+
+async function sendDailyReport() {
+  try {
+    const sr = await buildShowroomSummary();
+    const cc = await buildCallCentreSummary();
+    const mkt = await buildMarketingSummary();
+
+    let text = `📊 <b>Decopol — Kunlik Hisobot</b>\n${new Date().toLocaleDateString('uz-UZ')}\n\n`;
+
+    text += `🏢 <b>SHOWROOM</b>\n`;
+    text += `Jami Sotuv: $${fmtMoney(sr.totalSavdo)}\n`;
+    text += `Jami Lid: ${sr.totalLid}\n`;
+    text += `Konversiya: ${sr.konv}%\n`;
+    sr.perEmployee.forEach((e) => {
+      text += `• ${e.name}: ${e.sot} sotuv, $${fmtMoney(e.savdo)}\n`;
+    });
+
+    text += `\n☎️ <b>CALL CENTRE</b>\n`;
+    text += `Jami Visit: ${cc.totalVisit}\n`;
+    cc.perOperator.forEach((o) => {
+      text += `• ${o.name}: ${o.visit} visit, $${fmtMoney(o.sot)}\n`;
+    });
+
+    text += `\n📈 <b>MARKETING</b>\n`;
+    text += `Jami Lead: ${mkt.totalLeads}\n`;
+    text += `Xarajat: $${fmtMoney(mkt.totalSpend)}\n`;
+    text += `CPL: $${mkt.cpl.toFixed(2)}\n`;
+
+    const aiContext = `Showroom: Savdo $${fmtMoney(sr.totalSavdo)}, Lid ${sr.totalLid}, Konversiya ${sr.konv}%.\nCall Centre: Visit ${cc.totalVisit}.\nMarketing: Lead ${mkt.totalLeads}, Xarajat $${fmtMoney(mkt.totalSpend)}, CPL $${mkt.cpl.toFixed(2)}.`;
+    const aiSummary = await getClaudeSummary(aiContext);
+
+    text += `\n🤖 <b>AI Maslahatchi xulosasi</b>\n${aiSummary}`;
+
+    await tgRequest('sendMessage', { chat_id: HISOBOT_GROUP_ID, text, parse_mode: 'HTML' });
+    console.log('Kunlik hisobot yuborildi:', new Date().toISOString());
+  } catch (e) {
+    console.error('sendDailyReport xatosi:', e);
+  }
+}
+
+// Har minutda tekshiradi, soat 20:30 bo'lganda (faqat bir marta) hisobot yuboradi
+let lastReportDate = null;
+setInterval(() => {
+  const hour = tashkentHour();
+  const minute = tashkentMinute();
+  const today = todayStr();
+  if (hour === 20 && minute >= 30 && minute < 35 && lastReportDate !== today) {
+    lastReportDate = today;
+    sendDailyReport();
+  }
+}, 60000);
+
 // ───────────────────────────────────────────────
 // Bitta update (xabar/callback)ni qayta ishlash
 // ───────────────────────────────────────────────
@@ -387,6 +576,12 @@ app.post('/webhook', async (req, res) => {
 
 app.get('/debug-chats', (req, res) => {
   res.json({ ok: true, lastSeenChats });
+});
+
+// Qo'lda sinab ko'rish uchun: brauzerda ochib, hisobotni darhol yuboradi
+app.get('/test-daily-report', async (req, res) => {
+  await sendDailyReport();
+  res.json({ ok: true, message: 'Hisobot yuborildi (yoki xatolik logda)' });
 });
 
 const PORT = process.env.PORT || 3000;
